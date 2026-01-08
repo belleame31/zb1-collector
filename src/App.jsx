@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { Search, Heart, Check, Plus, X, Settings, Loader2, Camera, RotateCw, Maximize2, Filter, Trash2, Edit3, Save, Sparkles, Users } from 'lucide-react';
+import { Search, Heart, Check, Plus, X, Settings, Loader2, Camera, RotateCw, Maximize2, Filter, Trash2, Edit3, Save, Sparkles, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // --- CONFIGURATION ---
 const firebaseConfig = {
@@ -16,6 +16,7 @@ const firebaseConfig = {
 
 const CLOUDINARY_NAME = "dkedelokp"; 
 const CLOUDINARY_PRESET = "zb1_uploads"; 
+const CARDS_PER_PAGE = 15;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -39,12 +40,17 @@ export default function App() {
   const [userData, setUserData] = useState({ collected: [], wishlist: [] });
   const [loading, setLoading] = useState(true);
   
+  // Admin & UI State
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [adminModalMode, setAdminModalMode] = useState(null); 
   const [editingCard, setEditingCard] = useState(null);
   const [status, setStatus] = useState('');
   const [fullscreenCard, setFullscreenCard] = useState(null);
   
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Filters
   const [activeFilters, setActiveFilters] = useState({ memberIds: [], album: 'all', type: 'all', search: '' });
   const [previews, setPreviews] = useState({ front: null, back: null });
 
@@ -66,8 +72,31 @@ export default function App() {
     return () => { unsubCards(); unsubUser(); };
   }, [user]);
 
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilters]);
+
   const uniqueAlbums = useMemo(() => ['all', ...new Set(cards.map(c => c.album).filter(Boolean))], [cards]);
   const uniqueTypes = useMemo(() => ['all', ...new Set(cards.map(c => c.type).filter(Boolean))], [cards]);
+
+  const filteredCards = useMemo(() => {
+    return cards.filter(c => {
+      const cardMemberIds = c.memberIds || [c.memberId];
+      const matchMember = activeFilters.memberIds.length === 0 || 
+                           cardMemberIds.some(id => activeFilters.memberIds.includes(id));
+      
+      const mAlb = activeFilters.album === 'all' || c.album === activeFilters.album;
+      const mTyp = activeFilters.type === 'all' || c.type === activeFilters.type;
+      const mSrc = ( (c.memberNames?.join(' ') || c.memberName) + (c.type||'') + (c.album||'')).toLowerCase().includes(activeFilters.search.toLowerCase());
+      
+      return matchMember && mAlb && mTyp && mSrc;
+    });
+  }, [cards, activeFilters]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredCards.length / CARDS_PER_PAGE);
+  const paginatedCards = filteredCards.slice((currentPage - 1) * CARDS_PER_PAGE, currentPage * CARDS_PER_PAGE);
 
   const handleFilePreview = (e, side) => {
     const file = e.target.files[0];
@@ -92,7 +121,7 @@ export default function App() {
 
   const handleAdminSubmit = async (e, selectedMemberIds) => {
     e.preventDefault();
-    if (selectedMemberIds.length === 0) return alert("Please select at least one member.");
+    if (selectedMemberIds.length === 0) return alert("Select at least one member.");
     
     setStatus('Archiving...');
     const form = e.target;
@@ -156,18 +185,6 @@ export default function App() {
     await setDoc(doc(db, 'users', user.uid), { ...userData, [key]: newList });
   };
 
-  const filteredCards = cards.filter(c => {
-    const cardMemberIds = c.memberIds || [c.memberId];
-    const matchMember = activeFilters.memberIds.length === 0 || 
-                         cardMemberIds.some(id => activeFilters.memberIds.includes(id));
-    
-    const mAlb = activeFilters.album === 'all' || c.album === activeFilters.album;
-    const mTyp = activeFilters.type === 'all' || c.type === activeFilters.type;
-    const mSrc = ( (c.memberNames?.join(' ') || c.memberName) + (c.type||'') + (c.album||'')).toLowerCase().includes(activeFilters.search.toLowerCase());
-    
-    return matchMember && mAlb && mTyp && mSrc;
-  });
-
   if (loading) return <div className="h-screen flex items-center justify-center bg-sky-50"><Loader2 className="animate-spin text-sky-400 w-10 h-10" /></div>;
 
   return (
@@ -176,7 +193,7 @@ export default function App() {
       {/* Pastel Header */}
       <header className="bg-white/80 backdrop-blur-lg border-b border-sky-100 sticky top-0 z-40 px-4 py-3.5 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center text-white font-black shadow-lg shadow-sky-100">Z</div>
+          <div className="w-8 h-8 bg-sky-400 rounded-lg flex items-center justify-center text-white font-black shadow-lg shadow-sky-100 uppercase">Z</div>
           <h1 className="font-black text-xs tracking-[0.2em] text-sky-900 uppercase">ARCHIVE.ONE</h1>
         </div>
         
@@ -205,10 +222,10 @@ export default function App() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-300 w-4 h-4" />
             <input 
               type="text" 
-              placeholder="Search database..." 
+              placeholder="Search archive..." 
               value={activeFilters.search}
               onChange={(e) => setActiveFilters({...activeFilters, search: e.target.value})}
-              className="w-full pl-11 pr-12 py-3.5 rounded-2xl border-none bg-white shadow-xl shadow-sky-900/5 outline-none focus:ring-2 focus:ring-sky-200 font-bold text-sm placeholder:text-sky-200/50 uppercase tracking-tighter"
+              className="w-full pl-11 pr-12 py-3.5 rounded-2xl border-none bg-white shadow-xl shadow-sky-900/5 outline-none focus:ring-2 focus:ring-sky-200 font-black text-sm placeholder:text-sky-200/50 uppercase tracking-tighter"
             />
           </div>
 
@@ -233,7 +250,7 @@ export default function App() {
       {/* GALLERY */}
       <main className="max-w-7xl mx-auto px-4 pt-2">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5 sm:gap-10">
-          {filteredCards.map(card => (
+          {paginatedCards.map(card => (
             <Photocard 
               key={card.id} 
               card={card} 
@@ -256,6 +273,32 @@ export default function App() {
               <Sparkles className="w-10 h-10 text-sky-100 mx-auto mb-4" />
               <h2 className="text-[10px] font-black text-sky-200 uppercase tracking-[0.3em]">Vault Matches Zero</h2>
            </div>
+        )}
+
+        {/* PAGINATION CONTROLS */}
+        {totalPages > 1 && (
+          <div className="mt-16 flex items-center justify-center gap-6 pb-10">
+            <button 
+              disabled={currentPage === 1}
+              onClick={() => { setCurrentPage(prev => Math.max(1, prev - 1)); window.scrollTo(0,0); }}
+              className={`w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-lg border border-sky-50 transition-all ${currentPage === 1 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-sky-500 hover:text-white'}`}
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            
+            <div className="flex flex-col items-center">
+               <span className="text-[10px] font-black text-sky-200 tracking-[0.2em] mb-1">PAGE</span>
+               <span className="text-xl font-black text-sky-900 leading-none">{currentPage} <span className="text-sky-200">/</span> {totalPages}</span>
+            </div>
+
+            <button 
+              disabled={currentPage === totalPages}
+              onClick={() => { setCurrentPage(prev => Math.min(totalPages, prev + 1)); window.scrollTo(0,0); }}
+              className={`w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-lg border border-sky-50 transition-all ${currentPage === totalPages ? 'opacity-30 cursor-not-allowed' : 'hover:bg-sky-500 hover:text-white'}`}
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
         )}
       </main>
 
@@ -290,8 +333,6 @@ function FilterPill({ active, onClick, label }) {
 
 function Photocard({ card, isCollected, isWishlist, onToggleStatus, onFullscreen, isAdminMode, onEdit }) {
   const [isFlipped, setIsFlipped] = useState(false);
-  
-  // Use space instead of & for unit cards as requested
   const displayNames = (card.memberNames?.join(' ') || card.memberName).toUpperCase();
 
   return (
@@ -301,17 +342,17 @@ function Photocard({ card, isCollected, isWishlist, onToggleStatus, onFullscreen
           className={`relative aspect-[5.5/8.5] w-full transition-all duration-700 preserve-3d cursor-pointer ${isFlipped ? 'rotate-y-180' : ''}`}
           onClick={() => card.imageUrlBack && setIsFlipped(!isFlipped)}
         >
-          <div className="absolute inset-0 backface-hidden rounded-3xl overflow-hidden bg-white shadow-2xl shadow-sky-900/5 border border-white">
+          <div className="absolute inset-0 backface-hidden rounded-[2rem] overflow-hidden bg-white shadow-2xl shadow-sky-900/5 border border-white">
             <img src={card.imageUrl} className="w-full h-full object-cover" loading="lazy" />
             <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                {isAdminMode && (
                  <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="w-9 h-9 flex items-center justify-center bg-sky-500 text-white rounded-xl shadow-lg"><Edit3 className="w-4 h-4" /></button>
                )}
-               <button onClick={(e) => { e.stopPropagation(); onFullscreen(); }} className="w-9 h-9 flex items-center justify-center bg-white/95 text-sky-500 rounded-xl shadow-lg"><Maximize2 className="w-4 h-4" /></button>
+               <button onClick={(e) => { e.stopPropagation(); onFullscreen(); }} className="w-9 h-9 flex items-center justify-center bg-white/90 text-sky-500 rounded-xl shadow-lg"><Maximize2 className="w-4 h-4" /></button>
             </div>
             {isCollected && <div className="absolute inset-0 bg-sky-400/10 flex items-center justify-center"><div className="bg-white p-3 rounded-full shadow-2xl scale-125"><Check className="text-sky-400 w-5 h-5 stroke-[4px]" /></div></div>}
           </div>
-          <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-3xl overflow-hidden bg-sky-50 shadow-lg border border-white">
+          <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-[2rem] overflow-hidden bg-sky-50 shadow-lg border border-white">
             <img src={card.imageUrlBack || card.imageUrl} className="w-full h-full object-cover grayscale-[0.4]" />
           </div>
         </div>
@@ -410,10 +451,17 @@ function FullscreenModal({ card, onClose, isCollected, onToggleStatus }) {
   const displayNames = (card.memberNames?.join(' ') || card.memberName).toUpperCase();
 
   return (
-    <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-2xl flex flex-col items-center justify-center p-6 animate-in fade-in duration-500 overflow-y-auto no-scrollbar">
-      <button onClick={onClose} className="fixed top-8 right-8 p-4 bg-sky-50 text-sky-400 rounded-full z-[110] shadow-sm hover:scale-110 transition-all"><X /></button>
+    <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-2xl flex flex-col items-center justify-center p-4 sm:p-6 animate-in fade-in duration-500 overflow-y-auto no-scrollbar">
       
-      <div className="w-full max-w-[320px] sm:max-w-[480px] mb-12 mt-16 shrink-0 group">
+      {/* Optimized Mobile Close Button */}
+      <button 
+        onClick={onClose} 
+        className="fixed top-4 right-4 sm:top-8 sm:right-8 p-2 sm:p-4 bg-sky-50 text-sky-400 rounded-full z-[110] shadow-sm hover:scale-110 active:scale-90 transition-all"
+      >
+        <X className="w-5 h-5 sm:w-6 sm:h-6" />
+      </button>
+      
+      <div className="w-full max-w-[320px] sm:max-w-[480px] mb-12 mt-16 sm:mt-12 shrink-0 group">
         <div className="perspective-1000 w-full">
           <div 
             className={`relative aspect-[5.5/8.5] w-full transition-transform duration-1000 preserve-3d cursor-pointer ${isFlipped ? 'rotate-y-180' : ''}`}
