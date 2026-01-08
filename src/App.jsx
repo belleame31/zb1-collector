@@ -2,10 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { Search, Heart, Check, Plus, X, Settings, Loader2, Upload, Database, Camera } from 'lucide-react';
+import { Search, Heart, Check, Plus, X, Settings, Loader2, Camera, RotateCw, Eye, Sparkles, LayoutGrid } from 'lucide-react';
 
 // --- CONFIGURATION ---
-// These pull from Vercel's "Environment Variables" settings
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -15,11 +14,9 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Your specific Cloudinary Details
 const CLOUDINARY_NAME = "dkedelokp"; 
 const CLOUDINARY_PRESET = "zb1_uploads"; 
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -38,8 +35,10 @@ export default function App() {
   const [userData, setUserData] = useState({ collected: [], wishlist: [] });
   const [loading, setLoading] = useState(true);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [status, setStatus] = useState(''); // Tracking upload steps
+  const [status, setStatus] = useState('');
   
+  // Admin Form State
+  const [previews, setPreviews] = useState({ front: null, back: null });
   const [activeMember, setActiveMember] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -54,59 +53,63 @@ export default function App() {
     const unsubCards = onSnapshot(q, (s) => {
       setCards(s.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
-    }, (err) => alert("Firebase Error: " + err.message));
-
+    });
     const unsubUser = onSnapshot(doc(db, 'users', user.uid), (s) => {
       if (s.exists()) setUserData(s.data());
     });
     return () => { unsubCards(); unsubUser(); };
   }, [user]);
 
+  const handleFilePreview = (e, side) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPreviews(prev => ({ ...prev, [side]: reader.result }));
+      reader.readAsDataURL(file);
+    }
+  };
+
   const uploadToCloudinary = async (file) => {
-    setStatus('Uploading image to Cloudinary...');
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', CLOUDINARY_PRESET);
-
     const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/image/upload`, {
       method: 'POST',
       body: formData
     });
-    
-    if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error?.message || "Cloudinary Upload Failed");
-    }
-
     const data = await res.json();
     return data.secure_url;
   };
 
   const handleAddCard = async (e) => {
     e.preventDefault();
-    setStatus('Starting...');
+    setStatus('Uploading Images...');
     const form = e.target;
-    
     try {
-      const imageUrl = await uploadToCloudinary(form.photo.files[0]);
+      const frontUrl = await uploadToCloudinary(form.frontPhoto.files[0]);
+      let backUrl = null;
+      if (form.backPhoto.files[0]) {
+        setStatus('Uploading Back Image...');
+        backUrl = await uploadToCloudinary(form.backPhoto.files[0]);
+      }
       
-      setStatus('Saving card details to Database...');
+      setStatus('Saving to Database...');
       await addDoc(collection(db, 'cards'), {
         memberId: form.member.value,
         memberName: MEMBERS.find(m => m.id === form.member.value).name,
         album: form.album.value,
         type: form.type.value,
-        imageUrl,
+        imageUrl: frontUrl,
+        imageUrlBack: backUrl,
         createdAt: serverTimestamp()
       });
 
-      setStatus('');
-      alert("Card added successfully!");
-      form.reset();
+      setPreviews({ front: null, back: null });
+      alert("Photocard added successfully!");
       setIsAdminOpen(false);
     } catch (err) {
-      console.error(err);
       alert("Error: " + err.message);
+    } finally {
       setStatus('');
     }
   };
@@ -123,142 +126,216 @@ export default function App() {
   );
 
   if (loading) return (
-    <div className="h-screen flex items-center justify-center bg-blue-50">
-      <Loader2 className="animate-spin text-blue-500 w-8 h-8" />
+    <div className="h-screen flex items-center justify-center bg-white">
+      <Loader2 className="animate-spin text-blue-500 w-10 h-10" />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans">
-      <header className="bg-white border-b sticky top-0 z-40 p-4 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-100">Z</div>
+    <div className="min-h-screen bg-[#F8FAFC] pb-20 font-sans text-slate-900">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-xl border-b border-slate-100 sticky top-0 z-40 p-5 flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-blue-200">Z</div>
           <div>
-            <h1 className="font-black text-lg tracking-tighter text-slate-800 leading-none">ZB1.COLLECT</h1>
-            <p className="text-[9px] text-blue-500 font-bold tracking-widest uppercase mt-1">Global Database</p>
+            <h1 className="font-black text-xl tracking-tighter text-slate-800 leading-none">ZB1 COLLECT</h1>
+            <p className="text-[10px] text-blue-500 font-bold tracking-widest uppercase mt-1">Digital Archive</p>
           </div>
         </div>
-        <button onClick={() => setIsAdminOpen(true)} className="p-2.5 bg-slate-50 border border-slate-100 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
-          <Settings className="w-5 h-5" />
+        <button onClick={() => setIsAdminOpen(true)} className="w-12 h-12 flex items-center justify-center bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-blue-600 hover:shadow-lg hover:shadow-blue-50 transition-all">
+          <Plus className="w-6 h-6" />
         </button>
       </header>
 
+      {/* Admin Panel Overlay */}
       {isAdminOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex justify-center items-end sm:items-center p-4">
-          <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-black text-slate-800">Add Photocard</h2>
-              <button onClick={() => setIsAdminOpen(false)} className="p-2 bg-slate-100 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex justify-center items-end sm:items-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom duration-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight">Add New PC</h2>
+              <button onClick={() => setIsAdminOpen(false)} className="p-3 bg-slate-100 rounded-full text-slate-500"><X /></button>
             </div>
-            <form onSubmit={handleAddCard} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-1 block">Member</label>
-                <select name="member" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-100 appearance-none">
-                  {MEMBERS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-1 block">Album</label>
-                  <input name="album" placeholder="e.g. Cinema Paradise" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-100" required />
-                </div>
-                <div>
-                   <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-1 block">Type</label>
-                   <input name="type" placeholder="e.g. POB" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-100" required />
-                </div>
-              </div>
-              <div className="relative group border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center bg-slate-50 hover:bg-blue-50 hover:border-blue-200 transition-all cursor-pointer">
-                <input type="file" name="photo" id="photo" className="hidden" accept="image/*" required />
-                <label htmlFor="photo" className="cursor-pointer flex flex-col items-center gap-3">
-                  <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center text-blue-600 shadow-sm group-hover:scale-110 transition-transform">
-                    <Camera className="w-7 h-7" />
+            
+            <form onSubmit={handleAddCard} className="space-y-8">
+              {/* Image Selection & Preview */}
+              <div className="grid grid-cols-2 gap-6">
+                {['front', 'back'].map((side) => (
+                  <div key={side} className="space-y-3">
+                    <p className="text-center text-[10px] font-black uppercase text-slate-400 tracking-widest">{side} of card</p>
+                    <div className="relative aspect-[5.5/8.5] bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center overflow-hidden group hover:border-blue-400 transition-colors">
+                      {previews[side] ? (
+                        <img src={previews[side]} className="w-full h-full object-cover" alt="Preview" />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-slate-400">
+                          <Camera className="w-8 h-8" />
+                          <span className="text-[10px] font-bold">Select Photo</span>
+                        </div>
+                      )}
+                      <input 
+                        type="file" 
+                        name={`${side}Photo`} 
+                        required={side === 'front'} 
+                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        accept="image/*"
+                        onChange={(e) => handleFilePreview(e, side)}
+                      />
+                    </div>
                   </div>
-                  <span className="text-xs font-bold text-slate-500">Select Front Image</span>
-                </label>
+                ))}
               </div>
+
+              {/* Card Metadata */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="col-span-1 sm:col-span-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 mb-2 block">Member</label>
+                  <select name="member" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-100 appearance-none font-bold">
+                    {MEMBERS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 mb-2 block">Album</label>
+                  <input name="album" placeholder="e.g. Melting Point" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-100 font-bold" required />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 mb-2 block">Version / Type</label>
+                  <input name="type" placeholder="e.g. Fairytale POB" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-100 font-bold" required />
+                </div>
+              </div>
+
               <button 
                 disabled={!!status} 
-                className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-100 hover:bg-blue-700 disabled:bg-slate-300 disabled:shadow-none transition-all flex items-center justify-center gap-3"
+                className="w-full py-5 bg-blue-600 text-white rounded-[2rem] font-black shadow-2xl shadow-blue-200 hover:bg-blue-700 disabled:bg-slate-200 disabled:shadow-none transition-all flex items-center justify-center gap-3 text-sm uppercase tracking-widest"
               >
-                {status ? (
-                  <>
-                    <Loader2 className="animate-spin w-5 h-5" />
-                    <span className="text-xs uppercase tracking-widest">{status}</span>
-                  </>
-                ) : 'Upload to Catalogue'}
+                {status ? <><Loader2 className="animate-spin w-5 h-5" /> {status}</> : 'Publish to Archive'}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      <main className="max-w-6xl mx-auto p-4 sm:p-8">
-        <div className="mb-10 flex flex-col gap-6">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto p-6 sm:p-10">
+        <div className="mb-12 flex flex-col gap-8">
           <div className="relative group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5 group-focus-within:text-blue-500 transition-colors" />
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 w-6 h-6 group-focus-within:text-blue-500 transition-colors" />
             <input 
               type="text" 
-              placeholder="Search by member or version..." 
+              placeholder="Search by member, album or event..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-14 pr-6 py-5 rounded-[2rem] border-none bg-white shadow-xl shadow-slate-200/50 outline-none focus:ring-4 focus:ring-blue-500/5 placeholder:text-slate-300 font-medium"
+              className="w-full pl-16 pr-8 py-6 rounded-[2.5rem] border-none bg-white shadow-2xl shadow-slate-200/40 outline-none focus:ring-4 focus:ring-blue-500/10 placeholder:text-slate-300 font-semibold text-lg"
             />
           </div>
           <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-            <button onClick={() => setActiveMember('all')} className={`px-6 py-2.5 rounded-full text-xs font-black transition-all ${activeMember === 'all' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 border border-slate-100'}`}>ALL</button>
+            <button onClick={() => setActiveMember('all')} className={`px-8 py-3 rounded-2xl text-xs font-black transition-all ${activeMember === 'all' ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' : 'bg-white text-slate-400 border border-slate-100'}`}>ALL MEMBERS</button>
             {MEMBERS.map(m => (
-              <button key={m.id} onClick={() => setActiveMember(m.id)} className={`px-6 py-2.5 rounded-full text-xs font-black transition-all whitespace-nowrap ${activeMember === m.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 border border-slate-100'}`}>
+              <button key={m.id} onClick={() => setActiveMember(m.id)} className={`px-8 py-3 rounded-2xl text-xs font-black transition-all whitespace-nowrap ${activeMember === m.id ? 'bg-blue-600 text-white shadow-xl shadow-blue-200' : 'bg-white text-slate-400 border border-slate-100'}`}>
                 {m.name.split(' ').pop()}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+        {/* Card Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-8">
           {filteredCards.map(card => (
-            <div key={card.id} className="bg-white rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50 border border-white group transition-all hover:shadow-2xl hover:-translate-y-1">
-              <div className="aspect-[3/4] relative overflow-hidden bg-slate-100">
-                <img src={card.imageUrl} alt="" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
-                {userData.collected?.includes(card.id) && (
-                  <div className="absolute inset-0 bg-blue-600/10 backdrop-blur-[1px] flex items-center justify-center animate-in zoom-in duration-300">
-                    <div className="bg-white p-3 rounded-full shadow-2xl scale-110"><Check className="text-blue-600 w-6 h-6 stroke-[3px]" /></div>
-                  </div>
-                )}
-              </div>
-              <div className="p-5">
-                <div className="flex justify-between items-start mb-1">
-                  <h3 className="font-black text-slate-800 text-sm truncate">{card.memberName}</h3>
-                  <button onClick={() => toggleStatus('wishlist', card.id)} className="p-1">
-                    <Heart className={`w-5 h-5 transition-all ${userData.wishlist?.includes(card.id) ? 'fill-red-500 text-red-500 scale-110' : 'text-slate-200 hover:text-red-200'}`} />
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400 font-bold truncate mb-5 uppercase tracking-tighter">{card.album} • {card.type}</p>
-                <button 
-                  onClick={() => toggleStatus('collected', card.id)}
-                  className={`w-full py-3.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${
-                    userData.collected?.includes(card.id) 
-                    ? 'bg-blue-50 text-blue-600 border border-blue-100' 
-                    : 'bg-slate-900 text-white hover:bg-blue-600 hover:shadow-lg hover:shadow-blue-200'
-                  }`}
-                >
-                  {userData.collected?.includes(card.id) ? 'In Collection' : 'Got it!'}
-                </button>
-              </div>
-            </div>
+            <Photocard 
+              key={card.id} 
+              card={card} 
+              isCollected={userData.collected?.includes(card.id)}
+              isWishlist={userData.wishlist?.includes(card.id)}
+              onToggleStatus={toggleStatus}
+            />
           ))}
         </div>
 
         {filteredCards.length === 0 && (
-          <div className="py-20 text-center bg-white rounded-[3rem] border border-dashed border-slate-200">
-             <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto mb-4">
-                <Database className="w-10 h-10 text-slate-200" />
+          <div className="py-32 text-center bg-white rounded-[4rem] shadow-sm border-2 border-dashed border-slate-100">
+             <div className="w-24 h-24 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-blue-500">
+                <LayoutGrid className="w-10 h-10" />
              </div>
-             <h3 className="text-slate-800 font-black text-xl">The Vault is Empty</h3>
-             <p className="text-slate-400 text-sm mt-2 mb-6">Start building the ZB1 archive by adding cards.</p>
-             <button onClick={() => setIsAdminOpen(true)} className="px-8 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest">Add First Card</button>
+             <h3 className="text-2xl font-black text-slate-800 tracking-tight">Nothing here yet</h3>
+             <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">Be the first to contribute to the global ZB1 photocard archive.</p>
           </div>
         )}
       </main>
+
+      {/* Persistent CSS for Flipping Animation */}
+      <style>{`
+        .perspective-1000 { perspective: 1000px; }
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+      `}</style>
+    </div>
+  );
+}
+
+// Separate Photocard Component for individual state management (flipping)
+function Photocard({ card, isCollected, isWishlist, onToggleStatus }) {
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  return (
+    <div className="group relative flex flex-col">
+      {/* 3D Flip Container */}
+      <div className="perspective-1000 w-full mb-5">
+        <div className={`relative aspect-[5.5/8.5] w-full transition-transform duration-700 preserve-3d cursor-pointer ${isFlipped ? 'rotate-y-180' : ''}`}
+             onClick={() => card.imageUrlBack && setIsFlipped(!isFlipped)}>
+          
+          {/* Front Side */}
+          <div className="absolute inset-0 backface-hidden rounded-[1.8rem] overflow-hidden bg-slate-200 shadow-xl shadow-slate-200/50">
+            <img src={card.imageUrl} className="w-full h-full object-cover" loading="lazy" />
+            {isCollected && (
+              <div className="absolute inset-0 bg-blue-600/10 backdrop-blur-[1px] flex items-center justify-center">
+                <div className="bg-white/90 p-4 rounded-full shadow-2xl scale-125"><Check className="text-blue-600 w-6 h-6 stroke-[3px]" /></div>
+              </div>
+            )}
+            {/* Flip Hint */}
+            {card.imageUrlBack && (
+              <div className="absolute bottom-4 right-4 bg-black/40 backdrop-blur-md p-2 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                <RotateCw className="w-4 h-4" />
+              </div>
+            )}
+          </div>
+
+          {/* Back Side */}
+          <div className="absolute inset-0 backface-hidden rotate-y-180 rounded-[1.8rem] overflow-hidden bg-slate-100 shadow-xl">
+            {card.imageUrlBack ? (
+              <img src={card.imageUrlBack} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
+                <Sparkles className="text-slate-300 w-10 h-10 mb-2" />
+                <p className="text-[10px] font-black text-slate-400">ZB1 COLLECT</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Info & Actions */}
+      <div className="px-1">
+        <div className="flex justify-between items-start gap-2 mb-1">
+          <h3 className="font-black text-slate-800 text-sm leading-none truncate">{card.memberName}</h3>
+          <button onClick={() => onToggleStatus('wishlist', card.id)}>
+            <Heart className={`w-5 h-5 transition-all ${isWishlist ? 'fill-red-500 text-red-500 drop-shadow-sm' : 'text-slate-200 hover:text-red-200'}`} />
+          </button>
+        </div>
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight truncate mb-4">{card.album} • {card.type}</p>
+        
+        <button 
+          onClick={() => onToggleStatus('collected', card.id)}
+          className={`w-full py-3.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all ${
+            isCollected 
+            ? 'bg-blue-50 text-blue-600 border border-blue-100' 
+            : 'bg-slate-900 text-white hover:bg-blue-600 shadow-lg shadow-slate-200'
+          }`}
+        >
+          {isCollected ? 'Owned' : 'I have this'}
+        </button>
+      </div>
     </div>
   );
 }
